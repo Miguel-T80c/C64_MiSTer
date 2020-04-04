@@ -51,6 +51,7 @@ module hps_io #(parameter STRLEN=0, PS2DIV=0, WIDE=0, VDNUM=1, PS2WE=0)
 	output reg [15:0] joystick_analog_3,
 	output reg [15:0] joystick_analog_4,
 	output reg [15:0] joystick_analog_5,
+	input      [15:0] joy_raw,
 
 	// paddle 0..255
 	output reg  [7:0] paddle_0,
@@ -501,6 +502,8 @@ always@(posedge clk_sys) begin
 									3: cd_out[47:32] <= io_din;
 								endcase
 							end
+ 				// Reading user_io raw joy
+				'h37: io_dout <= joy_raw; 
 				endcase
 			end
 		end
