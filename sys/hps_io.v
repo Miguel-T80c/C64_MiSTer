@@ -477,7 +477,9 @@ always@(posedge clk_sys) begin
 							if (byte_cnt[1:0] == 3) byte_cnt <= 1;
 						end
  				// Reading user_io raw joy
-				'h0f: io_dout <= joy_raw; 
+				'h0f: io_dout <= joy_raw;
+// buttons and switches
+'h01: cfg <= io_din; 
 			endcase
 		end
 	end
