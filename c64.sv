@@ -335,8 +335,8 @@ wire [21:0] gamma_bus;
 wire  [7:0] pd1,pd2,pd3,pd4;
 
 // F2 F1 U D L R 
-wire [31:0] joyA = joydb_1ena ? {joydb_1[6],joydb_1[5]|joydb_1[4],joydb_1[3:0]} : joyA_USB;
-wire [31:0] joyB = joydb_2ena ? {joydb_2[6],joydb_2[5]|joydb_2[4],joydb_2[3:0]} : joydb_1ena ? joyA_USB : joyB_USB;
+wire [31:0] joyA = joydb_1ena ? (OSD_STATUS? 32'b000000 : {joydb_1[6],joydb_1[5]|joydb_1[4],joydb_1[3:0]}) : joyA_USB;
+wire [31:0] joyB = joydb_2ena ? (OSD_STATUS? 32'b000000 : {joydb_2[6],joydb_2[5]|joydb_2[4],joydb_2[3:0]}) : joydb_1ena ? joyA_USB : joyB_USB;
 wire [31:0] joyC = joydb_2ena ? joyA_USB : joydb_1ena ? joyB_USB : joyC_USB;
 wire [31:0] joyD = joydb_2ena ? joyB_USB : joydb_1ena ? joyC_USB : joyD_USB;
 
@@ -381,7 +381,7 @@ hps_io #(.STRLEN($size(CONF_STR)>>3), .VDNUM(2)) hps_io
 	.joystick_1(joyB_USB),
 	.joystick_2(joyC_USB),
 	.joystick_3(joyD_USB),
-	.joy_raw(joydb_1[5:0]),
+	.joy_raw(OSD_STATUS? (joydb_1[5:0]|joydb_2[5:0]) : 6'b000000 ),
 
 	.paddle_0(pd1),
 	.paddle_1(pd2),
