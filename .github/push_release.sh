@@ -7,7 +7,7 @@ CORE_NAME="C64"
 MAIN_BRANCH="master"
 COMPILATION_OUTPUT="output_files/C64.rbf"
 
-if [[ "$(git log -n 1 --pretty=format:%an)" == "The CI/CD Bot" ]] ; then
+if [[ "${FORCED:-false}" != "true" ]] && [[ "$(git log -n 1 --pretty=format:%an)" == "The CI/CD Bot" ]] ; then
     echo "The CI/CD Bot doesn't deliver a new release."
     exit 0
 fi
