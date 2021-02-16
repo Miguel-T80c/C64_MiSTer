@@ -56,6 +56,36 @@ module emu
 	output [1:0]  VGA_SL,
 	output        VGA_SCALER, // Force VGA scaler
 
+	input  [11:0] HDMI_WIDTH,
+	input  [11:0] HDMI_HEIGHT,
+
+`ifdef USE_FB
+	// Use framebuffer in DDRAM (USE_FB=1 in qsf)
+	// FB_FORMAT:
+	//    [2:0] : 011=8bpp(palette) 100=16bpp 101=24bpp 110=32bpp
+	//    [3]   : 0=16bits 565 1=16bits 1555
+	//    [4]   : 0=RGB  1=BGR (for 16/24/32 modes)
+	//
+	// FB_STRIDE either 0 (rounded to 256 bytes) or multiple of pixel size (in bytes)
+	output        FB_EN,
+	output  [4:0] FB_FORMAT,
+	output [11:0] FB_WIDTH,
+	output [11:0] FB_HEIGHT,
+	output [31:0] FB_BASE,
+	output [13:0] FB_STRIDE,
+	input         FB_VBL,
+	input         FB_LL,
+	output        FB_FORCE_BLANK,
+
+	// Palette control for 8bit modes.
+	// Ignored for other video modes.
+	output        FB_PAL_CLK,
+	output  [7:0] FB_PAL_ADDR,
+	output [23:0] FB_PAL_DOUT,
+	input  [23:0] FB_PAL_DIN,
+	output        FB_PAL_WR,
+`endif
+
 	output        LED_USER,  // 1 - ON, 0 - OFF.
 
 	// b[1]: 0 - LED status is system status OR'd with b[0]
@@ -85,6 +115,7 @@ module emu
 	output        SD_CS,
 	input         SD_CD,
 
+`ifdef USE_DDRAM
 	//High latency DDR3 RAM interface
 	//Use for non-critical time purposes
 	output        DDRAM_CLK,
@@ -97,7 +128,9 @@ module emu
 	output [63:0] DDRAM_DIN,
 	output  [7:0] DDRAM_BE,
 	output        DDRAM_WE,
+`endif
 
+`ifdef USE_SDRAM
 	//SDRAM interface with lower latency
 	output        SDRAM_CLK,
 	output        SDRAM_CKE,
@@ -110,6 +143,20 @@ module emu
 	output        SDRAM_nCAS,
 	output        SDRAM_nRAS,
 	output        SDRAM_nWE,
+`endif
+
+`ifdef DUAL_SDRAM
+	//Secondary SDRAM
+	input         SDRAM2_EN,
+	output        SDRAM2_CLK,
+	output [12:0] SDRAM2_A,
+	output  [1:0] SDRAM2_BA,
+	inout  [15:0] SDRAM2_DQ,
+	output        SDRAM2_nCS,
+	output        SDRAM2_nCAS,
+	output        SDRAM2_nRAS,
+	output        SDRAM2_nWE,
+`endif
 
 	input         UART_CTS,
 	output        UART_RTS,
@@ -178,7 +225,7 @@ localparam CONF_STR = {
 	"OB,Tape Sound,Off,On;",
 	"-;",
 	"O2,Video Standard,PAL,NTSC;",
-	"OO,Video Format,Original,Wide;",
+	"d1OO,Vertical Crop,No,Yes;",
 	"O45,Aspect Ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"O8A,Scandoubler Fx,None,HQ2x-320,HQ2x-160,CRT 25%,CRT 50%,CRT 75%;",
 	"-;",
@@ -198,7 +245,7 @@ localparam CONF_STR = {
 	"OQR,Pot 1&2,Joy 1 Fire 2/3,Mouse,Paddles 1&2;",
 	"OST,Pot 3&4,Joy 2 Fire 2/3,Mouse,Paddles 3&4;",
 	"-;",
-	"OEF,Kernal,Loadable C64,Standard C64,C64GS;",
+	"OEF,Kernal,Loadable C64,Standard C64,C64GS,Japanese;",
 	"-;",
 	"RH,Reset;",
 	"R0,Reset & Detach Cartridge;",
@@ -397,7 +444,7 @@ hps_io #(.STRLEN($size(CONF_STR)>>3), .VDNUM(2)) hps_io
 	.conf_str(CONF_STR),
 
 	.status(status),
-	.status_menumask(~status[25]),
+	.status_menumask({|vcrop,~status[25]}),
 	.buttons(buttons),
 	.forced_scandoubler(forced_scandoubler),
 	.gamma_bus(gamma_bus),
@@ -1001,7 +1048,7 @@ video_sync sync
 	.hsync(hsync),
 	.vsync(vsync),
 	.ntsc(ntsc),
-	.wide(status[24]),
+	.wide(wide),
 	.hsync_out(hsync_out),
 	.vsync_out(vsync_out),
 	.hblank(hblank),
@@ -1031,12 +1078,37 @@ end
 wire scandoubler = status[10:8] || forced_scandoubler;
 
 assign CLK_VIDEO = clk64;
-assign VIDEO_ARX = (!ar) ? (status[24] ? 8'd16 : 8'd4) : (ar - 1'd1);
-assign VIDEO_ARY = (!ar) ? (status[24] ? 8'd9  : 8'd3) : 12'd0;
 assign VGA_SL    = (status[10:8] > 2) ? status[9:8] - 2'd2 : 2'd0;
 assign VGA_F1    = 0;
 
+reg [9:0] vcrop;
+reg wide;
+always @(posedge CLK_VIDEO) begin
+	vcrop <= 0;
+	wide <= 0;
+	if(HDMI_WIDTH >= (HDMI_HEIGHT + HDMI_HEIGHT[11:1])) begin
+		if(HDMI_HEIGHT == 480)  vcrop <= 240;
+		if(HDMI_HEIGHT == 600)  begin vcrop <= 200; wide <= vcrop_en; end
+		if(HDMI_HEIGHT == 720)  vcrop <= 240;
+		if(HDMI_HEIGHT == 768)  vcrop <= 256; // NTSC mode has 250 visible lines only!
+		if(HDMI_HEIGHT == 800)  begin vcrop <= 200; wide <= vcrop_en; end
+		if(HDMI_HEIGHT == 1080) vcrop <= ntsc ? 10'd216 : 10'd270;
+		if(HDMI_HEIGHT == 1200) vcrop <= 240;
+	end
+end
+
 wire [1:0] ar = status[5:4];
+wire vcrop_en = status[24];
+wire vga_de;
+video_crop video_crop
+(
+	.*,
+	.VGA_DE_IN(vga_de),
+	.ARX((!ar) ? (wide ? 12'd340 : 12'd400) : (ar - 1'd1)),
+	.ARY((!ar) ? 12'd300 : 12'd0),
+	.CROP_SIZE(vcrop_en ? vcrop : 10'd0),
+	.CROP_OFF(0)
+);
 
 video_mixer #(.GAMMA(1)) video_mixer
 (
@@ -1064,7 +1136,7 @@ video_mixer #(.GAMMA(1)) video_mixer
 	.VGA_B(VGA_B),
 	.VGA_VS(VGA_VS),
 	.VGA_HS(VGA_HS),
-	.VGA_DE(VGA_DE)
+	.VGA_DE(vga_de)
 );
 
 wire        opl_en = status[12];
